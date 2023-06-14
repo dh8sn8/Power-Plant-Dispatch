@@ -1,7 +1,8 @@
 # Define the cost functions for each generator
 def marginal_price(tech_data, generator,co2_price):
     """
-    Returns the marginal price for the given generator in €/MWh, based on the fuel price, effficiency, further variable costs, and carbon emissions of that generator
+    Returns the marginal price for the given generator in €/MWh, based on the fuel price, efficiency,
+    further variable costs, and carbon emissions of that generator
 
     Parameters:
         generator: generator in question
