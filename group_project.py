@@ -89,89 +89,107 @@ for i in timesteps[1:]:
 print(dispatch)
 
 
-#zuerst nach preissortieren und dann cumulative capacity
-#def merit_order(color_list, tech_data, load):
-#load dataframe with tech, available capacity, and marginal cost. Sort marginal cost
+# Function loops through dispatch timesteps and creates the merit order. TODO: the return gives only timestep t10, we need to loop all df
+def merit_order(optimised_dispatch, tech_data):
+    for timestep in optimised_dispatch:
+        timesteps = optimised_dispatch.get([timestep]) #dispatch
+        tech_mo = tech_data.get(['cap_MW', 'marginal_cost']).set_index(timesteps.index) #tech_data_noCO2price
+        m_o = timesteps.join(tech_mo)
 
-
-timestep = dispatch.get(['t1'])
-tech_mo = tech_data_noCO2price.get(['cap_MW', 'marginal_cost']).set_index(timestep.index)
-m_o = timestep.join(tech_mo)
-
-# Create dataframe with colors for merit order
-color_list = ['#b20101','#d35050','#08ad97','#707070','#9e5a01','#ff9000','#235ebc','#f9d002']
-color_df = pd.DataFrame({'tech': m_o.index,
+        # Create dataframe with colors for merit order
+        color_list = ['#b20101','#d35050','#08ad97','#707070','#9e5a01','#ff9000','#235ebc','#f9d002']
+        color_df = pd.DataFrame({'tech': m_o.index,
                          'colors': color_list}).set_index('tech')
 
-m_o = m_o.join(color_df).sort_values('marginal_cost')
-m_o['cumulative_cap'] = m_o['cap_MW'].cumsum()
-# For-loop to determine the position of ticks in x-axis for each bar
-m_o["xpos"] = ""
+        m_o = m_o.join(color_df).sort_values('marginal_cost')
+        m_o['cumulative_cap'] = m_o['cap_MW'].cumsum()
 
-for index in m_o.index:
+        # For-loop to determine the position of ticks in x-axis for each bar
+        m_o["xpos"] = ""
 
-    # get index number based on index name
-    i = m_o.index.get_loc(index)
-
-    if index == "Solar":  # First index
-        m_o.loc[index, "xpos"] = m_o.loc[index, 'cap_MW']
-
-    else:
-        # Sum of cumulative capacity in the row above and the half of available capacity in
-        m_o.loc[index, "xpos"] = m_o.loc[index, "available_capacity"] / 2 + m_o.iloc[i - 1, 2]
-
-
-# Function to determine the cut_off_power_plant that sets the market clearing price
-    def cut_off(demand):
-        # To get the cutoff power plant
         for index in m_o.index:
+        # get index number based on index name
+            i = m_o.index.get_loc(index)
 
-            if m_o.loc[index, 'cumulative_cap'] < demand:
-                pass
+
+            if index == "Solar":  # First index
+                m_o.loc[index, "xpos"] = m_o.loc[index, 'cap_MW']
 
             else:
+            # Sum of cumulative capacity in the row above and the half of available capacity in
+                m_o.loc[index, "xpos"] = m_o.loc[index, 'cap_MW'] / 2 + m_o.iloc[i - 1, 2]  # aufpassen welche Spalte/Zeile hier genommen wird
+
+    return m_o
+
+m_o = merit_order(dispatch, tech_data_noCO2price)
+print(m_o)
+# Function to determine the cut_off_power_plant that sets the market clearing price TODO: Check if calculations are valid
+def cut_off(m_o, demand):
+    cut_off_power_plants = []
+
+    for d in demand.load_MW:
+#        d_numeric = float(d)
+        for index in m_o.index:
+            if m_o.loc[index, 'cumulative_cap'] < d:
+                pass
+            else:
                 cut_off_power_plant = index
-                print("Power plant that sets the electricity price is: ", cut_off_power_plant)
+                print(
+                    "Power plant that sets the electricity price for the load {} MW is: {}".format(d, cut_off_power_plant))
+                cut_off_power_plants.append(cut_off_power_plant)
                 break
 
-        return cut_off_power_plant
+    return cut_off_power_plants
+
+# TODO Function needs to be included in the loop
+def merit_order_curve(m_o, demand):
+    plt.figure(figsize=(20, 12))
+    plt.rcParams["font.size"] = 16
+
+    colors = m_o.colors.values
+    xpos = m_o['xpos'].values.tolist()
+    y = m_o['marginal_cost'].values.tolist()
+    # width of each bar
+    w = m_o['cap_MW'].values.tolist()
+    cut_off_power_plant = cut_off(m_o=m_o, demand=demand)
+
+    plt.style.use('bmh')
+    plt.bar(xpos,
+            height=y,
+            width=w,
+            fill=True,
+            color=colors)
+
+    plt.xlim(0, m_o['cap_MW'].sum())
+    plt.ylim(0, m_o['marginal_cost'].max() + 20)
+
+    plt.hlines(y=m_o.loc[cut_off_power_plant, 'marginal_cost'],
+               xmin=0,
+               xmax=demand,
+               color="red",
+               linestyle="dashed")
+
+    plt.vlines(x=demand,
+               ymin=0,
+               ymax=m_o.loc[cut_off_power_plant, 'marginal_cost'],
+               color="red",
+               linestyle="dashed",
+               label="Demand")
+
+    plt.text(x=demand - m_o.loc[cut_off_power_plant, 'cap_MW'] / 2,
+             y=m_o.loc[cut_off_power_plant, "marginal_cost"] + 10,
+             s=f"Electricity price: \n    {round(m_o.loc[cut_off_power_plant, 'marginal_cost'], 2)} €/MWh")
+
+    plt.xlabel("Power plant capacity (GW)")
+    plt.ylabel("Marginal Cost (€/MWh)")
+    # plt.title()
+    plt.show()
 
 
-    power_plants = m_o.index.values
-    colors = m_o.color.values
+
+#m_o = merit_order(dispatch, tech_data_noCO2price)
+#merit_order_curve(m_o)
 
 
-    def merit_order_curve(demand):
-        plt.figure(figsize=(20, 12))
-        plt.rcParams["font.size"] = 16
 
-        colors = m_o.color.values
-        xpos = m_o['xpos'].values.tolist()
-        y = m_o['marginal_cost'].values.tolist()
-        # width of each bar
-        w = m_o['cap_MW'].values.tolist()
-        cut_off_power_plant = cut_off(demand)
 
-        fig = plt.bar(xpos,
-                      height=y,
-                      width=w,
-                      fill=True,
-                      color=colors)
-
-        plt.xlim(0, m_o['cap_MW'].sum())
-        plt.ylim(0, m_o['marginal_cost'].max() + 20)
-
-        plt.hlines(y=m_o.loc[cut_off_power_plant, 'marginal_cost'],
-                   xmin=0,
-                   xmax=demand,
-                   color="red",
-                   linestyle="dashed")
-
-        plt.vlines(x=demand,
-                   ymin=0,
-                   ymax=m_o.loc[cut_off_power_plant, 'marginal_cost'],
-                   color="red",
-                   linestyle="dashed",
-                   label="Demand")
-
-plt.style.use('bmh')
