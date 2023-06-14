@@ -1,6 +1,7 @@
 import pyomo.environ as pyo
 import pandas as pd
 from pyomo.environ import ConcreteModel, Var, Objective, Constraint, SolverFactory
+import matplotlib.pyplot as plt
 
 #Import function defined in functions.py
 # ...import * if alle function in functions.py shpuld be imported
@@ -34,16 +35,15 @@ m.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT) #specify dual variables (shadow
 
 # Create a set S for the technologies
 m.S = pyo.Set(initialize=tech_data['tech'])
-print(m.S)
+#print(m.S)
 
 # Define the decision variable for each generator
 m.generators = Var(m.S, domain=pyo.NonNegativeReals)
-#print(m.generators)
+
 
 # Calculate the marginal costs wit no CO2 price
 tech_data_noCO2price = tech_data.copy()
 tech_data_noCO2price['marginal_cost'] = round(tech_data_noCO2price['fuel_p']/tech_data_noCO2price['eta']+tech_data_noCO2price['c_var_other'],2)
-#print(tech_data_noCO2price)
 
 # Clone the concrete model `m` for no CO2 price model m_0
 m_0 = m.clone()
@@ -62,7 +62,7 @@ for i in range(len(duration)):
 timesteps = list(models.keys())
 
 # Each timestep now has model
-print(models)
+#print(models)
 
 for i in timesteps:
     model = models[i]
@@ -88,3 +88,90 @@ for i in timesteps[1:]:
     dispatch = dispatch.join(d)
 print(dispatch)
 
+
+#zuerst nach preissortieren und dann cumulative capacity
+#def merit_order(color_list, tech_data, load):
+#load dataframe with tech, available capacity, and marginal cost. Sort marginal cost
+
+
+timestep = dispatch.get(['t1'])
+tech_mo = tech_data_noCO2price.get(['cap_MW', 'marginal_cost']).set_index(timestep.index)
+m_o = timestep.join(tech_mo)
+
+# Create dataframe with colors for merit order
+color_list = ['#b20101','#d35050','#08ad97','#707070','#9e5a01','#ff9000','#235ebc','#f9d002']
+color_df = pd.DataFrame({'tech': m_o.index,
+                         'colors': color_list}).set_index('tech')
+
+m_o = m_o.join(color_df).sort_values('marginal_cost')
+m_o['cumulative_cap'] = m_o['cap_MW'].cumsum()
+# For-loop to determine the position of ticks in x-axis for each bar
+m_o["xpos"] = ""
+
+for index in m_o.index:
+
+    # get index number based on index name
+    i = m_o.index.get_loc(index)
+
+    if index == "Solar":  # First index
+        m_o.loc[index, "xpos"] = m_o.loc[index, 'cap_MW']
+
+    else:
+        # Sum of cumulative capacity in the row above and the half of available capacity in
+        m_o.loc[index, "xpos"] = m_o.loc[index, "available_capacity"] / 2 + m_o.iloc[i - 1, 2]
+
+
+# Function to determine the cut_off_power_plant that sets the market clearing price
+    def cut_off(demand):
+        # To get the cutoff power plant
+        for index in m_o.index:
+
+            if m_o.loc[index, 'cumulative_cap'] < demand:
+                pass
+
+            else:
+                cut_off_power_plant = index
+                print("Power plant that sets the electricity price is: ", cut_off_power_plant)
+                break
+
+        return cut_off_power_plant
+
+
+    power_plants = m_o.index.values
+    colors = m_o.color.values
+
+
+    def merit_order_curve(demand):
+        plt.figure(figsize=(20, 12))
+        plt.rcParams["font.size"] = 16
+
+        colors = m_o.color.values
+        xpos = m_o['xpos'].values.tolist()
+        y = m_o['marginal_cost'].values.tolist()
+        # width of each bar
+        w = m_o['cap_MW'].values.tolist()
+        cut_off_power_plant = cut_off(demand)
+
+        fig = plt.bar(xpos,
+                      height=y,
+                      width=w,
+                      fill=True,
+                      color=colors)
+
+        plt.xlim(0, m_o['cap_MW'].sum())
+        plt.ylim(0, m_o['marginal_cost'].max() + 20)
+
+        plt.hlines(y=m_o.loc[cut_off_power_plant, 'marginal_cost'],
+                   xmin=0,
+                   xmax=demand,
+                   color="red",
+                   linestyle="dashed")
+
+        plt.vlines(x=demand,
+                   ymin=0,
+                   ymax=m_o.loc[cut_off_power_plant, 'marginal_cost'],
+                   color="red",
+                   linestyle="dashed",
+                   label="Demand")
+
+plt.style.use('bmh')
