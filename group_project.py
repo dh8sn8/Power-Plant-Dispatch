@@ -188,7 +188,7 @@ def merit_order(dispatch,cap_fac, tech_data, demand):
         plt.ylabel("Marginal Cost (€/MWh)")
         plt.show()
         plt.tight_layout()
-        plt.savefig('results/merit_order_plot_noCo2.pdf')
+        plt.savefig('results/merit_order_plot.png')
 
     merit_order_curve(demand=demand)
 
